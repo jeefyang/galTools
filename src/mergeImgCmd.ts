@@ -1,7 +1,8 @@
 import path from "path"
-import child_process from "child_process"
+import { MergeImg, type XTypeType, type YTypeType } from './lib/mergeImg'
 import process from "process"
 import fs from 'fs'
+import { logColor } from "./lib/logColor"
 
 let exe_url = "magick"
 let input_dirs: string[] = []
@@ -10,81 +11,16 @@ let input_files: string[] = []
 let output_file: string = ""
 let split_input_dir: string = ""
 let split_num: number[] = []
-type XTypeType = "left" | "center" | "right"
-const xtypeList: XTypeType[] = ["left", "center", "right"]
+
 let xtype: XTypeType = "center"
-type YTypeType = 'top' | "bottom" | "center"
-const ytypeList: YTypeType[] = ['top', "bottom", "center"]
+
 let ytype: YTypeType = "center"
 let xdelta: number[] = [0]
 let ydelta: number[] = [0]
 let xRadioDeleta: number[] = []
 let yRadioDeleta: number[] = []
+let m = new MergeImg()
 
-const logColor = {
-    /** 透明背景 */
-    'opacityBG': '\x1B[0m', // 透明背景
-    /** 亮色 */
-    'bright': '\x1B[1m', // 亮色
-    /** 灰色 */
-    'grey': '\x1B[2m', // 灰色
-    /** 斜体 */
-    'italic': '\x1B[3m', // 斜体
-    /** 下划线 */
-    'underline': '\x1B[4m', // 下划线
-    /** 反向 */
-    'reverse': '\x1B[7m', // 反向
-    /** 隐藏 */
-    'hidden': '\x1B[8m', // 隐藏
-    /** 黑色 */
-    'black': '\x1B[30m', // 黑色
-    /** 红色 */
-    'red': '\x1B[31m', // 红色
-    /** 绿色 */
-    'green': '\x1B[32m', // 绿色
-    /** 黄色 */
-    'yellow': '\x1B[33m', // 黄色
-    /** 蓝色 */
-    'blue': '\x1B[34m', // 蓝色
-    /** 品红 */
-    'magenta': '\x1B[35m', // 品红
-    /** 青色 */
-    'cyan': '\x1B[36m', // 青色
-    /** 白色 */
-    'white': '\x1B[37m', // 白色
-    /** 亮黑色 */
-    'brightblack': '\x1B[90m', // 亮黑色
-    /** 亮红色 */
-    'brightred': '\x1B[91m', // 亮红色
-    /** 亮绿色 */
-    'brightgreen': '\x1B[92m', // 亮绿色
-    /** 亮黄色 */
-    'brightyellow': '\x1B[93m', // 亮黄色
-    /** 亮蓝色 */
-    'brightblue': '\x1B[94m', // 亮蓝色
-    /** 亮品红 */
-    'brightmagenta': '\x1B[95m', // 亮品红
-    /** 亮青色 */
-    'brightcyan': '\x1B[96m', // 亮青色
-    /** 亮白色 */
-    'brightwhite': '\x1B[97m', // 亮白色
-    /** 背景色为黑色 */
-    'blackBG': '\x1B[40m', // 背景色为黑色
-    /** 背景色为红色 */
-    'redBG': '\x1B[41m', // 背景色为红色
-    /** 背景色为绿色 */
-    'greenBG': '\x1B[42m', // 背景色为绿色
-    /** 背景色为黄色 */
-    'yellowBG': '\x1B[43m', // 背景色为黄色
-    /** 背景色为蓝色 */
-    'blueBG': '\x1B[44m', // 背景色为蓝色
-    /** 背景色为品红 */
-    'magentaBG': '\x1B[45m', // 背景色为品红
-    /** 背景色为青色 */
-    'cyanBG': '\x1B[46m', // 背景色为青色
-    /** 背景色为白色 */
-    'whiteBG': '\x1B[47m' // 背景色为白色
-}
 
 function printHelp() {
     console.log(`${logColor.brightcyan}%s${logColor.opacityBG}`, "-h       帮助")
@@ -132,7 +68,7 @@ function decodeArgv() {
             continue
         }
         else if (argv[c] == '-xt') {
-            xtype = xtypeList[xtypeList.findIndex(a => argv[c + 1] == a)] || 'center'
+            xtype = m.xtypeList[m.xtypeList.findIndex(a => argv[c + 1] == a)] || 'center'
             c += 2
             continue
         }
@@ -147,7 +83,7 @@ function decodeArgv() {
             continue
         }
         else if (argv[c] == '-yt') {
-            ytype = ytypeList[ytypeList.findIndex(a => argv[c + 1] == a)] || 'center'
+            ytype = m.ytypeList[m.ytypeList.findIndex(a => argv[c + 1] == a)] || 'center'
             c += 2
             continue
         }
@@ -176,82 +112,14 @@ function decodeArgv() {
     return true
 }
 
-const cache_sizeList: { [propName: string]: number[] } = {}
-function getSize(file: string) {
-    if (cache_sizeList[file]) {
-        return cache_sizeList[file]
-    }
-    let cmd = `"${exe_url}" identify -format "%[fx:w]x%[fx:h]" "${file}"`
-    let s = child_process.execSync(cmd, { encoding: "utf-8" })
-    let arr: number[] = s.split("x").map(c => Number(c) || 0)
-    cache_sizeList[file] = arr
-    return arr
-}
-
-function mergeImg(inputFiles: string[], outFile: string) {
-    let outDir = path.dirname(outFile)
-    if (!fs.existsSync(outDir)) {
-        fs.mkdirSync(outDir, { recursive: true })
-    }
-    let sizeList: { w: number, h: number }[] = []
-    for (let i = 0; i < inputFiles.length; i++) {
-        let file = inputFiles[i]
-        let size = getSize(file)
-        sizeList.push({ w: size[0], h: size[1] })
-    }
-    let maxW = 0
-    let maxH = 0
-    sizeList.forEach(c => {
-        if (maxW < c.w) {
-            maxW = c.w
-        }
-        if (maxH < c.h) {
-            maxH = c.h
-        }
-    })
-    let cmd = `"${exe_url}" convert -size ${maxW}x${maxH} xc:none`
-    let c = ""
-    for (let i = 0; i < inputFiles.length; i++) {
-        let file = inputFiles[i]
-        let size = sizeList[i]
-        let x = 0
-        let y = 0
-        if (xtype == "left") {
-            x += (xdelta[i] || 0)
-        }
-        else if (xtype == "center") {
-            x = (maxW - size.w) / 2 + (xdelta[i] || 0)
-        }
-        else if (xtype == "right") {
-            x = (maxW - size.w) - (xdelta[i] || 0)
-        }
-        if (ytype == "top") {
-            y += (ydelta[i] || 0)
-        }
-        else if (ytype == "center") {
-            y = (maxH - size.h) / 2 + (ydelta[i] || 0)
-        }
-        else if (ytype == "bottom") {
-            y = (maxH - size.h) - (ydelta[i] || 0)
-        }
-        x += (xRadioDeleta[i] || 0) * size.w
-        y += (yRadioDeleta[i] || 0) * size.h
-        c = ` -draw "image over ${x},${y} 0,0 '${file}'"` + c
-    }
-    cmd += c
-    cmd += ` "${outFile}"`
-    console.log(cmd)
-    let s = child_process.execSync(cmd)
-    console.log(`合成成功,输出:${output_file}`)
-
-}
-
 function run() {
     let check = decodeArgv()
     if (!check) {
         printHelp()
         return
     }
+
+    m.exe_url = exe_url
 
     if (input_dirs.length > 0 && output_dir) {
         if (!fs.existsSync(output_dir)) {
@@ -264,7 +132,17 @@ function run() {
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(output_dir, { recursive: true })
         }
-        mergeImg(input_files, output_file)
+        m.merge({
+            inputFiles: input_files,
+            outFile: output_file,
+            xtype: xtype,
+            ytype,
+            xRadioDeleta,
+            yRadioDeleta,
+            xdelta,
+            ydelta
+
+        })
     }
     else if (split_input_dir && output_dir) {
         if (!fs.existsSync(split_input_dir)) {
@@ -276,7 +154,17 @@ function run() {
         }
         let flist = fs.readdirSync(split_input_dir)
         if (split_num.length == 0) {
-            mergeImg(input_files, output_file)
+            m.merge({
+                inputFiles: input_files,
+                outFile: output_file,
+                xtype: xtype,
+                ytype,
+                xRadioDeleta,
+                yRadioDeleta,
+                xdelta,
+                ydelta
+
+            })
         }
         else {
             let arrList: { flist: string[], name: string }[] = []
@@ -300,7 +188,16 @@ function run() {
             }
             loopFunc(split)
             for (let i = 0; i < arrList.length; i++) {
-                mergeImg(arrList[i].flist, path.join(output_dir, arrList[i].name))
+                m.merge({
+                    inputFiles: arrList[i].flist,
+                    outFile: path.join(output_dir, arrList[i].name),
+                    xtype: xtype,
+                    ytype,
+                    xRadioDeleta,
+                    yRadioDeleta,
+                    xdelta,
+                    ydelta
+                })
             }
         }
 

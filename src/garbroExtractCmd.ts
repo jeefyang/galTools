@@ -2,7 +2,7 @@ import path from "path"
 import child_process from "child_process"
 import process from "process"
 import fs from 'fs'
-import { logColor } from "./logColor"
+import { logColor } from "./lib/logColor"
 
 let exe_dir = ""
 let input_dir = ""
