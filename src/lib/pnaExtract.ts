@@ -24,21 +24,26 @@ type PngHeadType = {
     deltaY: number
     width: number
     height: number
-    /** 未解释标记,暂定为0 */
-    tag1: number
+    /** 开关标记,0为不是,3为是 */
+    tagOn: number
     /** 未解释标记,暂定为0 */
     tag2: number
-    /** 固定标记, 1072693248 */
+    /** 固定标记, 1072693248|1071731025 */
     pngTag: number
     size: number
 }
 
-type PngDataType = { head: PngHeadType, name: string }
+export type PngDataType = { head: PngHeadType, name: string, index: number, isOn: boolean, pair?: number, isTurn?: boolean }
+
+export type PnaJsonType = {
+    head: PnaHeadType, list: PngDataType[][], noUseList: PngDataType[]
+}
 
 export class PnaExtract {
 
     stream: fs.ReadStream | undefined
     baseName: string = ""
+    pnaType: "guilty" = "guilty"
 
     constructor(public op: {
         inputFile: string
@@ -68,8 +73,6 @@ export class PnaExtract {
 
             })
         })
-
-
 
     }
 
@@ -132,7 +135,7 @@ export class PnaExtract {
         return d
     }
 
-    async decode(pngCB: (data: PngDataType) => Promise<void>) {
+    async decode(pngCB: (data: PngDataType) => Promise<void>): Promise<PnaJsonType> {
         let pnaHead = this.readBinary<PnaHeadType>([
             {
                 name: "name", size: 4, type: "string"
@@ -153,6 +156,7 @@ export class PnaExtract {
 
         let pngContentList: PngDataType[][] = []
         let pngContent: PngDataType[] = []
+        let noUseList: PngDataType[] = []
         for (let i = 0; i < pnaHead.count; i++) {
             let pngHead = this.readBinary<PngHeadType>([
                 { isNull: true, size: 4 },
@@ -161,23 +165,39 @@ export class PnaExtract {
                 { name: "deltaY", size: 4, type: "int" },
                 { name: "width", size: 4, type: "uint" },
                 { name: "height", size: 4, type: "uint" },
-                { name: "tag1", size: 4, type: "int" },
+                { name: "tagOn", size: 4, type: "uint" },
                 { name: "tag2", size: 4, type: "int" },
                 { name: "pngTag", size: 4, type: "int" },
                 { name: "size", size: 4, type: "uint" },
             ])
             if (pngHead.pngCheck == -1) {
-
+                noUseList.push({ head: pngHead, index: i, isOn: false, name: "" })
                 pngContent.length && pngContentList.push(pngContent)
                 pngContent = []
                 continue
             }
 
-            if (pngHead.pngTag != 1072693248) {
+            if (pngHead.pngTag != 1072693248 && pngHead.pngTag != 1071731025) {
+                noUseList.push({ head: pngHead, index: i, isOn: false, name: "" })
                 continue
             }
             let fileName = `${this.baseName}_${(1000 + i).toString().slice(1)}.png`
-            pngContent.push({ head: pngHead, name: fileName })
+            let o: PngDataType = {
+                head: pngHead,
+                name: fileName,
+                index: i,
+                isOn: false
+            }
+            if (pngHead.tagOn == 3) {
+                o.isOn = true
+                // let oo: PngDataType = JSON.parse(JSON.stringify(o))
+                // oo.isOn = false
+                pngContent.length && pngContentList.push(pngContent)
+                pngContentList.push([o])
+                pngContent = []
+                continue
+            }
+            pngContent.push(o)
         }
         pngContent.length && pngContentList.push(pngContent)
 
@@ -190,7 +210,7 @@ export class PnaExtract {
                 await pngCB(c)
             }
         }
-        return pngContentList
+        return { head: pnaHead, list: pngContentList, noUseList: noUseList }
     }
 
     private async _writeBuffer(fileName: string, size: number, limitSize: number) {
@@ -234,7 +254,7 @@ export class PnaExtract {
 
     }
 
-    async extract(outDir: string) {
+    async extract(outDir: string): Promise<PnaJsonType> {
         if (!fs.existsSync(outDir)) {
             fs.mkdirSync(outDir, { recursive: true })
         }
@@ -248,8 +268,8 @@ export class PnaExtract {
                 let f = path.join(outDir, 'index.json')
                 fs.writeFileSync(f, JSON.stringify(json))
                 console.log(`配置文件 ${f} 已经生成!`)
+                res(json)
                 return
-
             })
         })
 
@@ -260,10 +280,3 @@ export class PnaExtract {
 
     }
 }
-
-let bigUrl = "\\\\192.168.123.3\\藏经阁\\xunlei11\\hhd800.com@MIDV-207-C_X1080X.mp4"
-
-let fileUrl = "D:\\Games\\gal\\extract\\Chip4\\ST02C_M.pna"
-
-let a = new PnaExtract({ inputFile: fileUrl })
-a.extract("./testSave")

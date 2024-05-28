@@ -62,3 +62,4 @@ export const logColor = {
     /** 背景色为白色 */
     'whiteBG': '\x1B[47m' // 背景色为白色
 }
+
